@@ -1,0 +1,18 @@
+
+### POST register
+POST {{domain}}/register?username=username&password=password
+
+### GET login
+GET {{domain}}/login?username=user&password=12345
+
+### GET self ip
+GET {{domain}}/self_ip
+Authorization: Bearer {{auth_token}}
+
+### GET external ip
+GET {{domain}}/ext_ip/3.3.3.3
+Authorization: Bearer {{auth_token}}
+
+### GET history
+GET {{domain}}/history
+Authorization: Bearer {{auth_token}}
