@@ -1,3 +1,5 @@
+@domain = http://localhost:8080
+@auth_token = pass
 
 ### POST register
 POST {{domain}}/register?username=username&password=password
