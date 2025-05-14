@@ -4,18 +4,20 @@ import (
 	"github.com/go-chi/chi"
 	chiMiddleware "github.com/go-chi/chi/middleware"
 	"ip_info_server/internal/db"
-	authMiddleware "ip_info_server/internal/middleware"
-
 	"ip_info_server/internal/handlers"
+	authMiddleware "ip_info_server/internal/middleware"
 	"log"
 	"net/http"
 )
 
 func main() {
-
 	//db init
 	db.InitDB()
 	defer db.DB.Close()
+
+	//инициализация компонентов
+	authMiddleware.InitMiddleware()
+	handlers.Init()
 
 	//router init
 	router := chi.NewRouter()

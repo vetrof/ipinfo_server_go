@@ -2,49 +2,32 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/go-chi/chi"
-	"io"
 	"ip_info_server/internal/db"
+	"ip_info_server/internal/interfaces"
 	"ip_info_server/internal/middleware"
-	"log"
+	"ip_info_server/internal/services"
 	"net/http"
 )
 
-type Response = db.IPInfo
+// ipInfoService сервис для работы с IP информацией
+var ipInfoService interfaces.IPInfoService
 
+// userRepository репозиторий для работы с пользователями
+var userRepository interfaces.UserRepository
+
+// Init инициализирует обработчики
+func Init() {
+	ipInfoService = services.NewIPInfoService()
+	userRepository = db.GetRepository()
+}
+
+// SelfIpHandler обрабатывает запрос получения информации о своем IP
 func SelfIpHandler(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get("https://ipinfo.io/json")
+	ipInfo, err := ipInfoService.FetchSelfIPInfo(r.Context())
 	if err != nil {
-		http.Error(w, "Failed to get IP info", http.StatusInternalServerError)
-		log.Println("Error fetching IP info:", err)
+		http.Error(w, "Failed to get IP info: "+err.Error(), http.StatusInternalServerError)
 		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Failed to read response", http.StatusInternalServerError)
-		log.Println("Error reading response:", err)
-		return
-	}
-
-	var ipInfo Response
-	if err := json.Unmarshal(body, &ipInfo); err != nil {
-		http.Error(w, "Failed to parse JSON", http.StatusInternalServerError)
-		log.Println("Error parsing JSON:", err)
-		return
-	}
-
-	// Получаем userID из контекста
-	userID, ok := middleware.GetUserID(r.Context())
-	if ok {
-		ipInfo.UserID = userID
-	}
-
-	// Сохраняем в БД
-	if err := db.SaveIPInfo(ipInfo); err != nil {
-		log.Println("DB save error:", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -53,41 +36,14 @@ func SelfIpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ExtIpHandler обрабатывает запрос получения информации о внешнем IP
 func ExtIpHandler(w http.ResponseWriter, r *http.Request) {
-
 	ip := chi.URLParam(r, "ip")
 
-	resp, err := http.Get("https://ipinfo.io/" + ip + "/json")
+	ipInfo, err := ipInfoService.FetchExternalIPInfo(r.Context(), ip)
 	if err != nil {
-		http.Error(w, "Failed to get IP info", http.StatusInternalServerError)
-		log.Println("Error fetching IP info:", err)
+		http.Error(w, "Failed to get IP info: "+err.Error(), http.StatusInternalServerError)
 		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Failed to read response", http.StatusInternalServerError)
-		log.Println("Error reading response:", err)
-		return
-	}
-
-	var ipInfo Response
-	if err := json.Unmarshal(body, &ipInfo); err != nil {
-		http.Error(w, "Failed to parse JSON", http.StatusInternalServerError)
-		log.Println("Error parsing JSON:", err)
-		return
-	}
-
-	// Получаем userID из контекста
-	userID, ok := middleware.GetUserID(r.Context())
-	if ok {
-		ipInfo.UserID = userID
-	}
-
-	// Сохраняем в БД
-	if err := db.SaveIPInfo(ipInfo); err != nil {
-		log.Println("DB save error:", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -96,22 +52,21 @@ func ExtIpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HistoryHandler обрабатывает запрос получения истории запросов
 func HistoryHandler(w http.ResponseWriter, r *http.Request) {
-
-	// Получаем userID из контекста
 	userID, _ := middleware.GetUserID(r.Context())
 
-	fmt.Println("userID --> ", userID)
-
-	records, err := db.HistoryIPInfoByUser(userID)
+	records, err := ipInfoService.GetUserHistory(userID)
 	if err != nil {
 		http.Error(w, "Failed to fetch history", http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(records)
 }
 
+// RegisterHandler обрабатывает запрос регистрации пользователя
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	password := r.URL.Query().Get("password")
@@ -120,7 +75,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.CreateUser(username, password)
+	user, err := userRepository.CreateUser(username, password)
 	if err != nil {
 		http.Error(w, "Cannot create user: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -131,6 +86,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// LoginHandler обрабатывает запрос входа пользователя
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	password := r.URL.Query().Get("password")
@@ -139,9 +95,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.GetUser(username, password)
+	user, err := userRepository.GetUser(username, password)
 	if err != nil {
-		http.Error(w, "Cannot create user: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Cannot login: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

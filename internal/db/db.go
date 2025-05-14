@@ -2,25 +2,12 @@ package db
 
 import (
 	"database/sql"
+	"ip_info_server/internal/models"
 	"log"
 	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
 )
-
-type IPInfo struct {
-	IP       string
-	Hostname string
-	City     string
-	Region   string
-	Country  string
-	Loc      string
-	Org      string
-	Postal   string
-	Timezone string
-	Readme   string
-	UserID   int
-}
 
 var DB *sql.DB
 
@@ -68,7 +55,7 @@ func InitDB() {
 	}
 }
 
-func SaveIPInfo(info IPInfo) error {
+func SaveIPInfo(info models.IPInfo) error {
 	stmt, err := DB.Prepare(`
 		INSERT INTO ip_info (
 			ip, hostname, city, region, country,
@@ -89,7 +76,7 @@ func SaveIPInfo(info IPInfo) error {
 	return err
 }
 
-func HistoryIPInfoByUser(userID int) ([]IPInfo, error) {
+func HistoryIPInfoByUser(userID int) ([]models.IPInfo, error) {
 	rows, err := DB.Query(`
 		SELECT ip, hostname, city, region, country,
 		       loc, org, postal, timezone, readme, user_id
@@ -103,9 +90,9 @@ func HistoryIPInfoByUser(userID int) ([]IPInfo, error) {
 	}
 	defer rows.Close()
 
-	var result []IPInfo
+	var result []models.IPInfo
 	for rows.Next() {
-		var info IPInfo
+		var info models.IPInfo
 		err := rows.Scan(
 			&info.IP, &info.Hostname, &info.City, &info.Region, &info.Country,
 			&info.Loc, &info.Org, &info.Postal, &info.Timezone, &info.Readme, &info.UserID,

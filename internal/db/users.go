@@ -1,65 +1,74 @@
 package db
 
 import (
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
 	"errors"
-	"fmt"
+	"ip_info_server/internal/models"
 )
 
-type User struct {
-	ID       int
-	Username string
-	Password string
-	Token    string
+// GetUserByToken получает пользователя по токену
+func GetUserByToken(token string) (models.User, error) {
+	var user models.User
+	row := DB.QueryRow("SELECT id, username, password, token FROM users WHERE token = ?", token)
+	err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Token)
+	if err != nil {
+		return models.User{}, errors.New("user not found")
+	}
+	return user, nil
 }
 
-func CreateUser(username, password string) (*User, error) {
-	tokenBytes := make([]byte, 16)
-	_, err := rand.Read(tokenBytes)
+// CreateUser создает нового пользователя
+func CreateUser(username, password string) (models.User, error) {
+	// Проверка существования пользователя
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&count)
 	if err != nil {
-		return nil, err
+		return models.User{}, err
 	}
-	token := hex.EncodeToString(tokenBytes)
+	if count > 0 {
+		return models.User{}, errors.New("username already exists")
+	}
 
+	// Генерация токена (в реальном приложении нужно использовать более надежный способ)
+	token := GenerateToken(username, password)
+
+	// Создание пользователя
 	stmt, err := DB.Prepare("INSERT INTO users (username, password, token) VALUES (?, ?, ?)")
 	if err != nil {
-		return nil, err
+		return models.User{}, err
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(username, password, token)
+	result, err := stmt.Exec(username, password, token)
 	if err != nil {
-		return nil, err
+		return models.User{}, err
 	}
 
-	return &User{Username: username, Password: password, Token: token}, nil
+	id, err := result.LastInsertId()
+	if err != nil {
+		return models.User{}, err
+	}
+
+	return models.User{
+		ID:       int(id),
+		Username: username,
+		Password: password,
+		Token:    token,
+	}, nil
 }
 
-func GetUser(username, password string) (*User, error) {
-	var token string
-	err := DB.QueryRow(
-		"SELECT token FROM users WHERE username = ? AND password = ?",
-		username, password,
-	).Scan(&token)
-
+// GetUser получает пользователя по логину и паролю
+func GetUser(username, password string) (models.User, error) {
+	var user models.User
+	row := DB.QueryRow("SELECT id, username, password, token FROM users WHERE username = ? AND password = ?", username, password)
+	err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Token)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("invalid credentials")
-		}
-		return nil, err
+		return models.User{}, errors.New("invalid username or password")
 	}
-
-	return &User{Username: username, Password: password, Token: token}, nil
+	return user, nil
 }
 
-func GetUserByToken(token string) (*User, error) {
-	row := DB.QueryRow("SELECT id, username FROM users WHERE token = ?", token)
-	var user User
-	err := row.Scan(&user.ID, &user.Username)
-	if err != nil {
-		return nil, errors.New("invalid token")
-	}
-	return &user, nil
+// GenerateToken генерирует простой токен (для демонстрации)
+func GenerateToken(username, password string) string {
+	// В реальном приложении здесь должна быть более сложная логика
+	return username + ":" + password
 }
