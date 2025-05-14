@@ -1,5 +1,5 @@
 @domain = http://localhost:8080
-@auth_token = pass
+@auth_token = 7001b2c93d4e36527ae86df930188ea9
 
 ### POST register
 POST {{domain}}/register?username=username&password=password
