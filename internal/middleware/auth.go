@@ -1,9 +1,8 @@
 package middleware
 
 import (
-	"database/sql"
 	"encoding/base64"
-	"ip_info_server/internal/db"
+	"ip_info_server/internal/service"
 	"net/http"
 	"strings"
 )
@@ -12,7 +11,15 @@ import (
 var username = "admin"
 var password = "1234"
 
-func AuthMiddleware(next http.Handler) http.Handler {
+type AuthMiddleware struct {
+	userService *service.UserService
+}
+
+func NewAuthMiddleware(userService *service.UserService) *AuthMiddleware {
+	return &AuthMiddleware{userService: userService}
+}
+
+func (m *AuthMiddleware) TokenAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -22,14 +29,9 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		var userID int
-		err := db.DB.QueryRow("SELECT id FROM users WHERE token = ?", token).Scan(&userID)
+		userID, err := m.userService.GetUserIDByToken(token)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-			} else {
-				http.Error(w, "Database error", http.StatusInternalServerError)
-			}
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 

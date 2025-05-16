@@ -2,49 +2,37 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/go-chi/chi"
-	"io"
-	"ip_info_server/internal/db"
 	"ip_info_server/internal/middleware"
+	"ip_info_server/internal/service"
 	"log"
 	"net/http"
 )
 
-type Response = db.IPInfo
+type Handler struct {
+	ipService   *service.IPService
+	userService *service.UserService
+}
 
-func SelfIpHandler(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get("https://ipinfo.io/json")
+func NewHandler(ipService *service.IPService, userService *service.UserService) *Handler {
+	return &Handler{
+		ipService:   ipService,
+		userService: userService,
+	}
+}
+
+func (h *Handler) SelfIpHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		http.Error(w, "User not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	ipInfo, err := h.ipService.GetSelfIPInfo(userID)
 	if err != nil {
-		http.Error(w, "Failed to get IP info", http.StatusInternalServerError)
+		http.Error(w, "Failed to get IP info: "+err.Error(), http.StatusInternalServerError)
 		log.Println("Error fetching IP info:", err)
 		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Failed to read response", http.StatusInternalServerError)
-		log.Println("Error reading response:", err)
-		return
-	}
-
-	var ipInfo Response
-	if err := json.Unmarshal(body, &ipInfo); err != nil {
-		http.Error(w, "Failed to parse JSON", http.StatusInternalServerError)
-		log.Println("Error parsing JSON:", err)
-		return
-	}
-
-	// Получаем userID из контекста
-	userID, ok := middleware.GetUserID(r.Context())
-	if ok {
-		ipInfo.UserID = userID
-	}
-
-	// Сохраняем в БД
-	if err := db.SaveIPInfo(ipInfo); err != nil {
-		log.Println("DB save error:", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -53,41 +41,19 @@ func SelfIpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ExtIpHandler(w http.ResponseWriter, r *http.Request) {
-
+func (h *Handler) ExtIpHandler(w http.ResponseWriter, r *http.Request) {
 	ip := chi.URLParam(r, "ip")
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		http.Error(w, "User not found in context", http.StatusInternalServerError)
+		return
+	}
 
-	resp, err := http.Get("https://ipinfo.io/" + ip + "/json")
+	ipInfo, err := h.ipService.GetExternalIPInfo(ip, userID)
 	if err != nil {
-		http.Error(w, "Failed to get IP info", http.StatusInternalServerError)
+		http.Error(w, "Failed to get IP info: "+err.Error(), http.StatusInternalServerError)
 		log.Println("Error fetching IP info:", err)
 		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Failed to read response", http.StatusInternalServerError)
-		log.Println("Error reading response:", err)
-		return
-	}
-
-	var ipInfo Response
-	if err := json.Unmarshal(body, &ipInfo); err != nil {
-		http.Error(w, "Failed to parse JSON", http.StatusInternalServerError)
-		log.Println("Error parsing JSON:", err)
-		return
-	}
-
-	// Получаем userID из контекста
-	userID, ok := middleware.GetUserID(r.Context())
-	if ok {
-		ipInfo.UserID = userID
-	}
-
-	// Сохраняем в БД
-	if err := db.SaveIPInfo(ipInfo); err != nil {
-		log.Println("DB save error:", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -96,23 +62,24 @@ func ExtIpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func HistoryHandler(w http.ResponseWriter, r *http.Request) {
-
-	// Получаем userID из контекста
-	userID, _ := middleware.GetUserID(r.Context())
-
-	fmt.Println("userID --> ", userID)
-
-	records, err := db.HistoryIPInfoByUser(userID)
-	if err != nil {
-		http.Error(w, "Failed to fetch history", http.StatusInternalServerError)
+func (h *Handler) HistoryHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		http.Error(w, "User not found in context", http.StatusInternalServerError)
 		return
 	}
+
+	records, err := h.ipService.GetIPHistory(userID)
+	if err != nil {
+		http.Error(w, "Failed to fetch history: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(records)
 }
 
-func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	password := r.URL.Query().Get("password")
 	if username == "" || password == "" {
@@ -120,7 +87,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.CreateUser(username, password)
+	user, err := h.userService.RegisterUser(username, password)
 	if err != nil {
 		http.Error(w, "Cannot create user: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -131,7 +98,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	password := r.URL.Query().Get("password")
 	if username == "" || password == "" {
@@ -139,9 +106,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.GetUser(username, password)
+	user, err := h.userService.LoginUser(username, password)
 	if err != nil {
-		http.Error(w, "Cannot create user: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Login failed: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 

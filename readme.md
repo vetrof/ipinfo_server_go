@@ -3,9 +3,8 @@
 ⸻
 
 ###TODO
-- add service
-- add repository
-
+- add postgis db
+- add GET /heat_map -> all gps point for heat map
 
 
 # IP Info Server

@@ -4,36 +4,51 @@ import (
 	"github.com/go-chi/chi"
 	chiMiddleware "github.com/go-chi/chi/middleware"
 	"ip_info_server/internal/db"
-	authMiddleware "ip_info_server/internal/middleware"
-
 	"ip_info_server/internal/handlers"
+	"ip_info_server/internal/middleware"
+	"ip_info_server/internal/repository"
+	"ip_info_server/internal/service"
 	"log"
 	"net/http"
 )
 
 func main() {
-
-	//db init
+	// DB init
 	db.InitDB()
 	defer db.DB.Close()
 
-	//router init
+	// Repositories
+	ipRepo := repository.NewIPRepository(db.DB)
+	userRepo := repository.NewUserRepository(db.DB)
+
+	// Services
+	ipService := service.NewIPService(ipRepo)
+	userService := service.NewUserService(userRepo)
+
+	// Handlers
+	handler := handlers.NewHandler(ipService, userService)
+
+	// Auth middleware
+	authMiddleware := middleware.NewAuthMiddleware(userService)
+
+	// Router init
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.Logger)
 
-	//public path
-	router.Post("/register", handlers.RegisterHandler)
-	router.Get("/login", handlers.LoginHandler)
+	// Public paths
+	router.Post("/register", handler.RegisterHandler)
+	router.Get("/login", handler.LoginHandler)
 
-	//with token path
+	// Protected paths
 	router.Group(func(r chi.Router) {
-		r.Use(authMiddleware.AuthMiddleware)
-		r.Get("/self_ip", handlers.SelfIpHandler)
-		r.Get("/ext_ip/{ip}", handlers.ExtIpHandler)
-		r.Get("/history", handlers.HistoryHandler)
+		r.Use(authMiddleware.TokenAuthMiddleware)
+		r.Get("/self_ip", handler.SelfIpHandler)
+		r.Get("/ext_ip/{ip}", handler.ExtIpHandler)
+		r.Get("/history", handler.HistoryHandler)
 	})
 
-	//start server
+	// Start server
+	log.Println("Starting server on localhost:8080")
 	err := http.ListenAndServe("localhost:8080", router)
 	if err != nil {
 		log.Fatal(err)
